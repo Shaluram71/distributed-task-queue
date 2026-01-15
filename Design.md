@@ -69,3 +69,22 @@ The `jobs` table is the source of truth for job state and execution history.
 **Future Improvements:**
 - Separate error log table
 - Structured error metadata
+
+## SQL Query for Table:
+
+CREATE TABLE jobs (
+    id UUID PRIMARY KEY,
+    payload JSONB NOT NULL,
+
+    status TEXT NOT NULL CHECK (
+        status IN ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED')
+    ),
+
+    attempts INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL,
+
+    error_message TEXT,
+
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
