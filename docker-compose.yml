@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  # api:
+    # build: .
+    # command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    # ports:
+    #   - "8000:8000"
+    # depends_on:
+    #   - postgres
+    #   - redis
+
+  # worker:
+  #   build: .
+  #   command: python worker/worker.py
+  #   depends_on:
+  #     - postgres
+  #     - redis
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: queue
+      POSTGRES_PASSWORD: queue
+      POSTGRES_DB: queue
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
