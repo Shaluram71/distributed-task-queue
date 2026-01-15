@@ -4,6 +4,7 @@ from typing import Any, Dict
 import psycopg2
 from psycopg2.extras import Json
 import uuid
+import redis
 
 app = FastAPI()
 class JobCreateRequest(BaseModel):
@@ -33,9 +34,12 @@ def create_job(job: JobCreateRequest = Body(...)):
         0,
         job.max_attempts,
     ),
-)
+                )
 
         conn.commit()
+    
+    redis_client.lpush("job_queue", job_id)
+
     return {"job_id": job_id }
 
 # database connection
@@ -46,3 +50,10 @@ conn = psycopg2.connect(
     user = "queue",
     password = "queue",
 )
+
+#redis connection
+redis_client = redis.Redis(
+    host='localhost',
+    port=6379, 
+    decode_responses=True
+    )
