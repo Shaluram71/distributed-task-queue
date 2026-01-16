@@ -1,7 +1,8 @@
 import time
+from unittest import result
 import psycopg2
 import redis
-
+import random
 redis_client = redis.Redis(
     host = "localhost",
     port = 6379,
@@ -16,11 +17,23 @@ conn = psycopg2.connect(
     password = "queue",
 )
 
+def release_due_retries(redis_client):
+    now =  int(time.time())
+    
+    due_jobs = redis_client.zrangebyscore("retry_queue", min=0, max=now)
+    for job_id in due_jobs:
+        redis_client.zrem("retry_queue", job_id)
+        redis_client.lpush("job_queue", job_id)
+        print("Released job", job_id, "from retry queue back to job queue")
 print("Worker started... ")
 
 while True:
-    _, job_id = redis_client.brpop("job_queue", timeout=0)
-    
+    release_due_retries(redis_client)
+    result = redis_client.brpop("job_queue", timeout=1)
+    if not result:
+        continue
+    _, job_id = result
+
     with conn.cursor() as cur:
         cur.execute(
         """
@@ -80,6 +93,7 @@ while True:
             )
             attempts, max_attempts = cur.fetchone()
             conn.commit()
+    
         if attempts < max_attempts:
             with conn.cursor() as cur:
                 cur.execute(
@@ -92,8 +106,16 @@ while True:
                     (job_id,),
                 )
                 conn.commit()
-            print("Re-queuing job", job_id, "for retry", attempts, "of", max_attempts)
-            redis_client.lpush("job_queue", job_id)
+            
+            base_delay = 2  # seconds
+            delay = base_delay * (2 ** (attempts - 1))
+            jitter = random.uniform(0, delay * .1)
+            retry_at = int(time.time() + delay + jitter)
+            
+            redis_client.zadd("retry_queue", {job_id: retry_at})
+            print("Job", job_id, "scheduled to retry in", int(delay + jitter),"seconds (attempt", attempts, "of", max_attempts, ")")
+            continue
+
         else:
             with conn.cursor() as cur:
                 cur.execute(
