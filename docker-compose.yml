@@ -10,12 +10,12 @@ services:
     #   - postgres
     #   - redis
 
-  # worker:
-  #   build: .
-  #   command: python worker/worker.py
-  #   depends_on:
-  #     - postgres
-  #     - redis
+  worker:
+    build: .
+    command: python worker/worker.py
+    depends_on:
+      - postgres
+      - redis
 
   postgres:
     image: postgres:15
