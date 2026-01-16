@@ -19,11 +19,8 @@ conn = psycopg2.connect(
 print("Worker started... ")
 
 while True:
-    job_id = redis_client.rpop("job_queue")
+    _, job_id = redis_client.brpop("job_queue", timeout=0)
     
-    if job_id is None:
-        time.sleep(1)
-        continue
     with conn.cursor() as cur:
         cur.execute(
         """
