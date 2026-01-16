@@ -47,19 +47,67 @@ while True:
     print("Claimed job", job_id)
 
     # Simulate job processing
-    time.sleep(2)
+    try:
+        print("Processing job", job_id)
+        last_char = job_id[-1]
+        if last_char.isalpha():
+            raise Exception("Simulated job failure")
+        with conn.cursor() as cur:
+            cur.execute(
+            """
+            UPDATE jobs
+            SET status = 'COMPLETED',
+                updated_at = NOW()
+            WHERE id = %s
+            """,
+            (job_id,),
+            )
+            conn.commit()
+        print("Job", job_id, "completed successfully")
+        continue
     
-    with conn.cursor() as cur:
-        cur.execute(
-        """
-        UPDATE jobs
-        SET status = 'COMPLETED',
-            updated_at = NOW()
-        WHERE id = %s
-        """,
-        (job_id,),
-        )
-        conn.commit()
-        
-    print("Completed job", job_id)
-   
+    except Exception as e:
+        error_message = str(e)
+        print("Job", job_id, "failed with error:", error_message)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE jobs
+                SET attempts = attempts + 1,
+                    error_message = %s,
+                    updated_at = NOW()
+                WHERE id = %s
+                RETURNING attempts, max_attempts
+                """,
+                (error_message, job_id),
+            )
+            attempts, max_attempts = cur.fetchone()
+            conn.commit()
+        if attempts < max_attempts:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'PENDING',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (job_id,),
+                )
+                conn.commit()
+            print("Re-queuing job", job_id, "for retry", attempts, "of", max_attempts)
+            redis_client.lpush("job_queue", job_id)
+        else:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE jobs
+                    SET status = 'FAILED',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (job_id,),
+                )
+                conn.commit()
+            print("Job", job_id, "has reached max", attempts, "/", max_attempts, ". Marking as FAILED permanently.")
+        continue
