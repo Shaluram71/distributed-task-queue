@@ -1,4 +1,5 @@
 import time
+import psycopg2
 import redis
 
 redis_client = redis.Redis(
@@ -44,3 +45,21 @@ while True:
         conn.commit()
         
     print("Claimed job", job_id)
+
+    # Simulate job processing
+    time.sleep(2)
+    
+    with conn.cursor() as cur:
+        cur.execute(
+        """
+        UPDATE jobs
+        SET status = 'COMPLETED',
+            updated_at = NOW()
+        WHERE id = %s
+        """,
+        (job_id,),
+        )
+        conn.commit()
+        
+    print("Completed job", job_id)
+   
