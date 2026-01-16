@@ -109,5 +109,6 @@ while True:
                     (job_id,),
                 )
                 conn.commit()
-            print("Job", job_id, "has reached max", attempts, "/", max_attempts, ". Marking as FAILED permanently.")
+            redis_client.lpush("dead_letter_queue", job_id)
+            print("Job", job_id, "has reached max", attempts, "/", max_attempts, ". Sent to dead-letter queue.")
         continue
