@@ -1,0 +1,3 @@
+ALTER TABLE jobs
+ADD COLUMN locked_by TEXT,
+ADD COLUMN locked_at TIMESTAMP;

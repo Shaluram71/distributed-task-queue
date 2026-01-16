@@ -88,3 +88,9 @@ CREATE TABLE jobs (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+## Schema Validation Notes
+
+- Verified that valid job states are accepted
+- Invalid states are rejected by database constraints
+- Default values and timestamps behave as expected
