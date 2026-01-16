@@ -14,3 +14,15 @@ motivated replacing polling with an event-driven blocking call (`BRPOP`).
 - Zero Redis calls while idle
 - Immediate job pickup on enqueue
 - Eliminates sleep-based latency
+
+Workers use BRPOP with a short timeout to allow periodic release of delayed retries
+without busy polling.
+
+## Retry Backoff
+Immediate retries can cause retry storms and unnecessary load under failure.
+Exponential backoff is a standard mitigation used in production systems
+(e.g., SQS, Celery, Sidekiq). We adopted backoff directly rather than
+benchmarking immediate retries, as the tradeoff is well understood.
+
+A small randomized jitter was added to retry delays to prevent synchronized retries
+(thundering herd problem).
