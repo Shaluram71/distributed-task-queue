@@ -1,14 +1,14 @@
 version: "3.9"
 
 services:
-  # api:
-    # build: .
-    # command: uvicorn api.main:app --host 0.0.0.0 --port 8000
-    # ports:
-    #   - "8000:8000"
-    # depends_on:
-    #   - postgres
-    #   - redis
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
 
   worker:
     build: .
@@ -16,6 +16,12 @@ services:
     depends_on:
       - postgres
       - redis
+    
+  reaper:
+    build: .
+    command: python reaper/reaper.py
+    depends_on:
+      - postgre
 
   postgres:
     image: postgres:15

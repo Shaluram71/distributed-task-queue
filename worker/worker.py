@@ -8,7 +8,7 @@ import uuid
 import threading
 
 redis_client = redis.Redis(
-    host = "localhost",
+    host = "redis",
     port = 6379,
     decode_responses=True,
 )
@@ -17,7 +17,7 @@ redis_client = redis.Redis(
 db_pool = pool.ThreadedConnectionPool(
     1, 
     20,
-    host="localhost",
+    host="postgres",
     port=5432,
     dbname="queue",
     user="queue",
@@ -36,38 +36,21 @@ def release_due_retries(redis_client):
 print("Worker started... ")
 
 #method to run heartbeat in a separate thread
-def heartbeat_thread(job_id, worker_id, interval=30):
+def heartbeat_thread(job_id, WORKER_ID, interval=30):
     stop_event = threading.Event()
-    
+    heart_beat_event = threading.Event()
     def beat():
         while not stop_event.is_set():
             # borrow and put back connection for each iteration
-            heartbeat_conn = db_pool.getconn()
-            try:
-                with heartbeat_conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE jobs
-                        SET locked_at = NOW(),
-                        locked_by = %s
-                        WHERE id = %s
-                        """,
-                        (worker_id, job_id),
-                    )
-                    heartbeat_conn.commit()
-            except Exception as e:
-                print("Heartbeat error for job", job_id, ":", str(e))
-                heartbeat_conn.rollback()
-            finally:
-                db_pool.putconn(heartbeat_conn)
-
+            heart_beat_event.set()
             stop_event.wait(interval)
 
-    thread = threading.Thread(target=beat, daemon=True)
+    thread = threading.Thread(target=beat, daemon=False)
     thread.start()
-    return stop_event
+    return stop_event, heart_beat_event, thread
 
 #main worker loop
+WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
 while True:
     release_due_retries(redis_client)
     result = redis_client.brpop("job_queue", timeout=1)
@@ -75,8 +58,8 @@ while True:
         continue
 
     _, job_id = result
-    worker_id = f"worker-{uuid.uuid4().hex[:8]}"
-    print("Picked up job", job_id, "by", worker_id)
+    
+    print("Picked up job", job_id, "by", WORKER_ID)
 
     # borrowing a connection from the pool
     worker_conn = db_pool.getconn()
@@ -91,95 +74,110 @@ while True:
         WHERE id = %s
             AND status = 'PENDING'
         """,
-        (worker_id, job_id,),
+        (WORKER_ID, job_id,),
         )
+        worker_conn.commit()
         
         if cur.rowcount == 0:
             #another worker has already claimed it
-            worker_conn.commit()
             print("Skipped job", job_id, "as it was already claimed")
+            db_pool.putconn(worker_conn)
             continue
         
-        worker_conn.commit()
-        
     print("Claimed job", job_id)
-    heartbeat_stop_event = heartbeat_thread(job_id, worker_id)
+    last_heartbeat = time.monotonic()
+
+    heartbeat_stop_event, heartbeat_event, heartbeat_worker_thread = heartbeat_thread()
     # Simulate job processing
     try:
         print("Processing job", job_id)
+        JOB_RUNTIME = 90
+        start_run = time.monotonic()
+        while time.monotonic() - start_run < JOB_RUNTIME:
+            #simulate doing work
+            time.sleep(1)
+            
+            if heartbeat_event.is_set():
+                with worker_conn.cursor() as cur:
+                    cur.execute(
+                    """
+                    UPDATE jobs
+                    SET locked_at = NOW()
+                    WHERE id = %s
+                        AND locked_by = %s
+                        AND status = 'IN_PROGRESS'
+                    """,
+                    (job_id, WORKER_ID),
+                    )
+                    worker_conn.commit()
+                heartbeat_event.clear()
+                last_heartbeat = time.monotonic()
+         
         last_char = job_id[-1]
         if last_char.isalpha():
             raise Exception("Simulated job failure")
+
+        #Success Case
         with worker_conn.cursor() as cur:
             cur.execute(
             """
             UPDATE jobs
             SET status = 'COMPLETED',
-                updated_at = NOW()
+                updated_at = NOW(),
+                locked_at = NULL,
+                locked_by = NULL
             WHERE id = %s
             """,
             (job_id,),
             )
             worker_conn.commit()
         print("Job", job_id, "completed successfully")
-        continue
     
     except Exception as e:
         error_message = str(e)
         print("Job", job_id, "failed with error:", error_message)
+        
+        #Failure Case -> check, incerement, and lock in ONE transaction
         with worker_conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE jobs
                 SET attempts = attempts + 1,
                     error_message = %s,
-                    updated_at = NOW()
+                    updated_at = NOW(),
+                    status = CASE 
+                        WHEN attempts + 1 >= max_attempts THEN 'FAILED'
+                        ELSE 'PENDING'
+                    END,
+                    locked_at = NULL,
+                    locked_by = NULL
                 WHERE id = %s
-                RETURNING attempts, max_attempts
+                    AND status = 'IN_PROGRESS'
+                RETURNING attempts, max_attempts, status
                 """,
                 (error_message, job_id),
             )
-            attempts, max_attempts = cur.fetchone()
+            result = cur.fetchone()
             worker_conn.commit()
     
-        if attempts < max_attempts:
-            with worker_conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE jobs
-                    SET status = 'PENDING',
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (job_id,),
-                )
-                worker_conn.commit()
-            
-            base_delay = 2  # seconds
-            delay = base_delay * (2 ** (attempts - 1))
-            jitter = random.uniform(0, delay * .1)
-            retry_at = int(time.time() + delay + jitter)
-            
-            redis_client.zadd("retry_queue", {job_id: retry_at})
-            print("Job", job_id, "scheduled to retry in", int(delay + jitter),"seconds (attempt", attempts, "of", max_attempts, ")")
-            continue
-
-        else:
-            with worker_conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE jobs
-                    SET status = 'FAILED',
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (job_id,),
-                )
-                worker_conn.commit()
-            redis_client.lpush("dead_letter_queue", job_id)
-            print("Job", job_id, "has reached max", attempts, "/", max_attempts, ". Sent to dead-letter queue.")
+        if result:
+            attempts, max_attempts, status = result
+            if status == 'PENDING':
+                #schedule for retry with exponential backoff + small jitter
+                base_delay = 2 ** (attempts - 1)
+                delay = base_delay + (2 ** (attempts - 1))
+                jitter = random.uniform(0, delay * .1)
+                retry_time = int(time.time() + delay + jitter)
+                redis_client.zadd("retry_queue", {job_id: retry_time})
+                print("Scheduled job", job_id, "for retry at", retry_time)
+            else:
+                redis_client.lpush("dead_letter_queue", job_id)
+                print("Job", job_id, "moved to dead letter queue after max attempts")
     finally:
         #always return the connection back no matter what
-        db_pool.putconn(worker_conn)
-        #stop the heartbeat thread
-        heartbeat_stop_event.set()
+        if heartbeat_stop_event:
+            heartbeat_stop_event.set()
+        if heartbeat_worker_thread:
+            heartbeat_worker_thread.join(timeout=1)
+        if worker_conn:
+            db_pool.putconn(worker_conn)
