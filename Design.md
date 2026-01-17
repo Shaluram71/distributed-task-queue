@@ -3,7 +3,8 @@ This document explains the key design decisions behind the task queue system
 and the tradeoffs considered for each choice.
 
 ## Job Table Schema
-The `jobs` table is the source of truth for job state and execution history.
+The schema is designed to support exclusive job ownership, crash detection,
+and deterministic recovery through persisted state rather than worker memory.
 
 ### `id` — UUID
 **Choice:** UUID  
@@ -42,7 +43,7 @@ The `jobs` table is the source of truth for job state and execution history.
 **Why:**
 - ENUMs are difficult to modify in Postgres
 - New states may be added as the system evolves
-- TEXT + constraints offers more flexibility
+- TEXT + constraints offers flexibility while preserving correctness, allowing the lifecycle to evolve without schema migrations.
 
 **Tradeoffs:**
 - Less strict than ENUM at the database level
