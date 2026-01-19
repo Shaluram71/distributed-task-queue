@@ -18,6 +18,9 @@ and deterministic recovery through persisted state rather than worker memory.
 - Slightly larger than integers
 - Acceptable given low write volume
 
+### 'attempts' - INT
+`attempts` represents the number of execution attempts that have reached a terminal failure.
+
 ### `payload` — JSONB
 **Choice:** `JSONB` instead of `TEXT` or `JSON`
 

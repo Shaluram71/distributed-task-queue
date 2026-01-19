@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   api:
     build: .
@@ -21,7 +19,7 @@ services:
     build: .
     command: python reaper/reaper.py
     depends_on:
-      - postgre
+      - postgres
 
   postgres:
     image: postgres:15
@@ -29,6 +27,9 @@ services:
       POSTGRES_USER: queue
       POSTGRES_PASSWORD: queue
       POSTGRES_DB: queue
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     ports:
       - "5432:5432"
 
@@ -36,3 +37,6 @@ services:
     image: redis:7
     ports:
       - "6379:6379"
+
+volumes:
+  pgdata:
