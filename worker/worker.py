@@ -1,7 +1,7 @@
 import time
 from unittest import result
 import psycopg2
-from psycopg2 import pool
+from psycopg2 import pool, OperationalError
 import redis
 import random
 import uuid
@@ -14,16 +14,22 @@ redis_client = redis.Redis(
 )
 
 #changed single conn connection to a pool to support multiple threads
-db_pool = pool.ThreadedConnectionPool(
-    1, 
-    20,
-    host="postgres",
-    port=5432,
-    dbname="queue",
-    user="queue",
-    password="queue"
-)
-
+def create_db_pool():
+    while True:
+        try:
+            return pool.ThreadedConnectionPool(
+                1,
+                20,
+                host="postgres",
+                port=5432,
+                dbname="queue",
+                user="queue",
+                password="queue",
+            )
+        except OperationalError as e:
+            print("Postgres not ready, retrying...", e)
+            time.sleep(2)
+db_pool = create_db_pool()
 #method to release due retries back to job queue
 def release_due_retries(redis_client):
     now =  int(time.time())
@@ -87,7 +93,9 @@ while True:
     print("Claimed job", job_id)
     last_heartbeat = time.monotonic()
 
-    heartbeat_stop_event, heartbeat_event, heartbeat_worker_thread = heartbeat_thread()
+    heartbeat_stop_event, heartbeat_event, heartbeat_worker_thread = heartbeat_thread(
+        job_id, WORKER_ID
+    )
     # Simulate job processing
     try:
         print("Processing job", job_id)

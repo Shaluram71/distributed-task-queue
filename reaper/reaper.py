@@ -1,18 +1,26 @@
 import time
 import psycopg2
-from psycopg2 import pool
+from psycopg2 import pool, OperationalError
 
 HEARTBEAT_INTERVAL = 60
 REAPER_INTERAVAL = 30
 
-db_pool = pool.ThreadedConnectionPool(
-    1, 20,
-    host="localhost",
-    port=5432,
-    dbname="queue",
-    user="queue",
-    password="queue",
-)
+def create_db_pool():
+    while True:
+        try:
+            return pool.ThreadedConnectionPool(
+                1,
+                20,
+                host="postgres",
+                port=5432,
+                dbname="queue",
+                user="queue",
+                password="queue",
+            )
+        except OperationalError:
+            time.sleep(2)
+
+db_pool = create_db_pool()
 
 print("Reaper started... ")
 
