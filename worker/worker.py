@@ -135,8 +135,10 @@ while True:
                 locked_at = NULL,
                 locked_by = NULL
             WHERE id = %s
+                AND status = 'IN_PROGRESS'
+                AND locked_by = %s
             """,
-            (job_id,),
+            (job_id, WORKER_ID),
             )
             worker_conn.commit()
         print("Job", job_id, "completed successfully")
@@ -161,9 +163,10 @@ while True:
                     locked_by = NULL
                 WHERE id = %s
                     AND status = 'IN_PROGRESS'
+                    AND locked_by = %s
                 RETURNING attempts, max_attempts, status
                 """,
-                (error_message, job_id),
+                (error_message, job_id, WORKER_ID),
             )
             result = cur.fetchone()
             worker_conn.commit()
