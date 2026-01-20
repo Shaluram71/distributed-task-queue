@@ -23,4 +23,4 @@ explicit execution semantics.
 - Event-driven worker execution
 - Heartbeat-based liveness tracking
 - Retry and backoff mechanics
-- Reaper implementation present; concurrency semantics under active refinement
+- Reaper implementation
