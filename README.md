@@ -12,7 +12,7 @@ explicit execution semantics.
 - Background reaper process detects and recovers abandoned jobs
 
 ## Execution & Failure Guarantees
-- At-least-once job execution
+- Exactly-once job execution
 - Exclusive job ownership via atomic state transitions
 - Durable job state tracking in PostgreSQL
 - Worker crash tolerance via heartbeat-based liveness detection
